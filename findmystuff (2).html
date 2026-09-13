@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FindMyStuff - ระบบของหายได้คืน</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  dialog::backdrop { background: rgba(15, 23, 42, 0.55); }
+  .toast { animation: slideIn .25s ease-out, fadeOut .3s ease-in 2.4s forwards; }
+  @keyframes slideIn { from { transform: translateY(-12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @keyframes fadeOut { to { opacity: 0; transform: translateY(-8px); } }
+  .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+  .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  dialog[open] { animation: slideIn .15s ease-out; }
+  .spinner { border: 3px solid #e5e7eb; border-top-color: #2563eb; border-radius: 9999px; width: 2rem; height: 2rem; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans">
+
+<!-- Loading overlay -->
+<div id="loadingOverlay" class="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center gap-3">
+  <div class="spinner"></div>
+  <p class="text-sm text-gray-500">กำลังโหลดข้อมูล...</p>
+</div>
+
+<!-- Header -->
+<header class="bg-white border-b border-gray-200 sticky top-0 z-40">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
+    <div class="flex items-center gap-2 shrink-0">
+      <i data-lucide="search-check" class="w-8 h-8 text-blue-600"></i>
+      <span class="text-xl font-bold text-gray-900 hidden sm:inline">FindMyStuff</span>
+    </div>
+
+    <nav class="hidden md:flex gap-6 font-medium text-sm" id="mainNav">
+      <button type="button" onclick="switchMainView('feed')" id="navFeedBtn" class="pb-1">หน้าแรก</button>
+      <button type="button" onclick="switchMainView('my')" id="navMyBtn" class="hidden pb-1">ประกาศของฉัน</button>
+      <button type="button" onclick="switchMainView('admin')" id="navAdminBtn" class="hidden pb-1 items-center gap-1">
+        <span class="inline-flex items-center gap-1"><i data-lucide="shield-check" class="w-4 h-4"></i> จัดการหลังบ้าน</span>
+        <span id="pendingBadge" class="hidden bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">0</span>
+      </button>
+    </nav>
+
+    <div class="flex items-center gap-2 sm:gap-3">
+      <button type="button" id="btnReportFound" class="bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-1.5">
+        <i data-lucide="plus-circle" class="w-4 h-4"></i> <span class="hidden sm:inline">แจ้งพบของ</span>
+      </button>
+      <button type="button" id="btnReportLost" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-1.5">
+        <i data-lucide="alert-circle" class="w-4 h-4"></i> <span class="hidden sm:inline">แจ้งของหาย</span>
+      </button>
+      <div id="authContainer" class="pl-2 border-l border-gray-200 flex items-center gap-2"></div>
+    </div>
+  </div>
+  <div class="md:hidden flex gap-1 px-4 pb-2 text-xs" id="mainNavMobile"></div>
+</header>
+
+<!-- VIEW: PUBLIC FEED -->
+<div id="feedView">
+  <section class="bg-blue-600 py-10 px-4 text-white">
+    <div class="max-w-4xl mx-auto text-center space-y-4">
+      <h1 class="text-3xl sm:text-4xl font-bold">ระบบของหายได้คืน</h1>
+      <p class="text-blue-100 text-sm sm:text-base">ศูนย์กลางการแจ้งของหายและส่งคืนสิ่งของ ปลอดภัย และตรวจสอบได้จริง</p>
+
+      <form id="searchForm" class="bg-white p-3 rounded-xl shadow-lg flex flex-col md:flex-row gap-3 text-gray-800 mt-4">
+        <div class="flex-1 flex items-center gap-2 px-3 border-b md:border-b-0 md:border-r border-gray-200 py-2">
+          <i data-lucide="search" class="w-5 h-5 text-gray-400"></i>
+          <input type="text" id="searchInput" placeholder="ระบุชื่อสิ่งของ เช่น กระเป๋าสตางค์, กุญแจ..." aria-label="ค้นหาสิ่งของ" class="w-full focus:outline-none text-sm">
+        </div>
+        <div class="flex items-center gap-2 px-3 border-b md:border-b-0 md:border-r border-gray-200 py-2">
+          <i data-lucide="grid" class="w-5 h-5 text-gray-400"></i>
+          <select id="categorySelect" aria-label="เลือกหมวดหมู่" class="w-full focus:outline-none text-sm bg-transparent">
+            <option value="">ทุกหมวดหมู่</option>
+            <option value="bag">กระเป๋า / กระเป๋าสตางค์</option>
+            <option value="electronics">อุปกรณ์ไอที / มือถือ</option>
+            <option value="document">เอกสารสำคัญ / บัตร</option>
+            <option value="key">กุญแจ / คีย์การ์ด</option>
+            <option value="other">อื่นๆ</option>
+          </select>
+        </div>
+        <button type="submit" class="bg-blue-800 hover:bg-blue-900 text-white px-6 py-2.5 rounded-lg font-semibold text-sm transition flex items-center justify-center gap-2">
+          <i data-lucide="search" class="w-4 h-4"></i> ค้นหา
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
+      <div class="flex gap-2 bg-gray-200 p-1 rounded-lg text-sm" id="tabGroup" role="tablist">
+        <button type="button" class="tab-btn px-4 py-1.5 font-medium rounded-md transition" data-tab="all">ทั้งหมด</button>
+        <button type="button" class="tab-btn px-4 py-1.5 font-medium rounded-md transition" data-tab="found">ของที่พบ (Found)</button>
+        <button type="button" class="tab-btn px-4 py-1.5 font-medium rounded-md transition" data-tab="lost">ของหาย (Lost)</button>
+      </div>
+      <span class="text-sm text-gray-500" id="resultCount">พบทั้งหมด 0 รายการ</span>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" id="cardsGrid"></div>
+
+    <div id="emptyState" class="hidden text-center py-16 text-gray-500">
+      <i data-lucide="search-x" class="w-10 h-10 mx-auto mb-3 text-gray-300"></i>
+      <p class="font-medium">ไม่พบรายการที่ตรงกับการค้นหา</p>
+      <p class="text-sm">ลองเปลี่ยนคำค้นหาหรือหมวดหมู่ดูอีกครั้ง</p>
+    </div>
+  </main>
+</div>
+
+<!-- VIEW: MY REPORTS -->
+<div id="myView" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+  <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
+    <h2 class="text-xl font-bold text-gray-900">ประกาศของฉัน</h2>
+    <span class="text-sm text-gray-500" id="myResultCount"></span>
+  </div>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" id="myCardsGrid"></div>
+  <div id="emptyMyState" class="hidden text-center py-16 text-gray-500">
+    <i data-lucide="file-text" class="w-10 h-10 mx-auto mb-3 text-gray-300"></i>
+    <p class="font-medium">คุณยังไม่เคยส่งประกาศ</p>
+  </div>
+</div>
+
+<!-- VIEW: ADMIN DASHBOARD -->
+<div id="adminView" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <div class="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-6 flex items-center gap-3">
+    <div class="p-2 bg-amber-500 text-white rounded-lg"><i data-lucide="shield-check" class="w-6 h-6"></i></div>
+    <div>
+      <h2 class="font-bold text-amber-900">แผงควบคุมผู้ดูแลระบบ (Admin Dashboard)</h2>
+      <p class="text-xs text-amber-700">ตรวจสอบ อนุมัติ แก้ไข หรือลบประกาศที่ผู้ใช้ส่งเข้ามา ก่อนเผยแพร่บนหน้าเว็บสาธารณะ</p>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
+    <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+      <h3 class="font-bold text-gray-800 flex items-center gap-2">
+        <i data-lucide="clock" class="w-4 h-4 text-amber-500"></i> รายการรอการอนุมัติ (Pending)
+      </h3>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse text-sm">
+        <thead>
+          <tr class="bg-gray-100/60 text-gray-600 border-b border-gray-200 text-xs">
+            <th class="p-4">ประเภท</th><th class="p-4">รายการ</th><th class="p-4">สถานที่ / วันที่</th>
+            <th class="p-4">ผู้แจ้ง</th><th class="p-4 text-center">การจัดการ</th>
+          </tr>
+        </thead>
+        <tbody id="pendingTableBody" class="divide-y divide-gray-100"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-100 bg-gray-50">
+      <h3 class="font-bold text-gray-800 flex items-center gap-2">
+        <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-500"></i> จัดการประกาศทั้งหมดในระบบ
+      </h3>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse text-sm">
+        <thead>
+          <tr class="bg-gray-100/60 text-gray-600 border-b border-gray-200 text-xs">
+            <th class="p-4">ประเภท</th><th class="p-4">รายการ</th><th class="p-4">ผู้แจ้ง / ติดต่อ</th>
+            <th class="p-4">สถานะ</th><th class="p-4 text-center">การจัดการ</th>
+          </tr>
+        </thead>
+        <tbody id="allTableBody" class="divide-y divide-gray-100"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Footer -->
+<footer class="bg-white border-t border-gray-200 py-6 mt-4">
+  <div class="max-w-7xl mx-auto px-4 text-center text-xs text-gray-500">
+    <p>© 2026 FindMyStuff Platform. ข้อมูลทั้งหมดถูกเก็บไว้ในเบราว์เซอร์ของคุณเอง (localStorage) ไม่ต้องเชื่อมต่อเซิร์ฟเวอร์ภายนอก — หากล้างข้อมูลเบราว์เซอร์ ประกาศทั้งหมดจะหายไป</p>
+  </div>
+</footer>
+
+<!-- Login / Sign up Modal -->
+<dialog id="loginModal" class="rounded-xl p-0 w-full max-w-sm">
+  <form id="loginForm" class="p-6 space-y-4">
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-bold text-gray-900" id="authModalTitle">เข้าสู่ระบบ</h2>
+      <button type="button" data-close-modal class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+    </div>
+
+    <div id="authNameField">
+      <label class="block text-xs font-medium text-gray-600 mb-1" for="lName">ชื่อ-นามสกุล</label>
+      <input id="lName" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="ชื่อของคุณ">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1" for="lEmail">อีเมล</label>
+      <input required id="lEmail" type="email" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="you@example.com">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1" for="lPassword">รหัสผ่าน</label>
+      <input required id="lPassword" type="password" minlength="6" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="อย่างน้อย 6 ตัวอักษร">
+    </div>
+
+    <p class="text-xs text-gray-400">* ผู้ดูแลระบบ (Admin) คือบัญชีที่สมัครด้วยอีเมล <code>admin@test.com</code> เท่านั้น หากยังไม่มีบัญชีนี้ ให้กด "สมัครสมาชิก" แล้วสร้างด้วยอีเมลดังกล่าวหนึ่งครั้ง</p>
+    <div id="authError" class="hidden text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2"></div>
+
+    <div class="flex items-center justify-between pt-1">
+      <button type="button" id="authToggleModeBtn" class="text-xs text-blue-600 hover:underline font-medium">ยังไม่มีบัญชี? สมัครสมาชิก</button>
+    </div>
+
+    <div class="flex justify-end gap-2 pt-2">
+      <button type="button" data-close-modal class="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100">ยกเลิก</button>
+      <button type="submit" id="authSubmitBtn" class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700">เข้าสู่ระบบ</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Report Modal (user) -->
+<dialog id="reportModal" class="rounded-xl p-0 w-full max-w-lg">
+  <form id="reportForm" class="p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+    <div class="flex items-center justify-between sticky -top-6 bg-white pt-1 -mt-1">
+      <h2 id="reportModalTitle" class="text-lg font-bold text-gray-900">แจ้งพบสิ่งของ</h2>
+      <button type="button" data-close-modal class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1" for="fTitle">ชื่อสิ่งของ</label>
+      <input required id="fTitle" name="title" type="text" maxlength="80" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="เช่น กระเป๋าสตางค์สีน้ำตาล">
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1" for="fCategory">หมวดหมู่</label>
+        <select required id="fCategory" name="category" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="bag">กระเป๋า / กระเป๋าสตางค์</option>
+          <option value="electronics">อุปกรณ์ไอที / มือถือ</option>
+          <option value="document">เอกสารสำคัญ / บัตร</option>
+          <option value="key">กุญแจ / คีย์การ์ด</option>
+          <option value="other">อื่นๆ</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1" for="fDate">วันที่</label>
+        <input required id="fDate" name="date" type="date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1" for="fLocation">สถานที่</label>
+      <input required id="fLocation" name="location" type="text" maxlength="120" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="เช่น อาคารเรียนรวม 1 ชั้น 1">
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1" for="fDescription">รายละเอียด</label>
+      <textarea required id="fDescription" name="description" rows="3" maxlength="500" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="ลักษณะสิ่งของ จุดสังเกต ฯลฯ"></textarea>
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">รูปภาพสิ่งของ (สูงสุด 10 รูป)</label>
+      <div id="fImageStrip" class="flex flex-wrap gap-2"></div>
+      <input id="fImage" type="file" accept="image/*" multiple class="hidden">
+      <p class="text-xs text-gray-500 mt-1">รองรับ JPG/PNG ระบบจะลดขนาดไฟล์ให้อัตโนมัติก่อนบันทึกไว้ในเบราว์เซอร์ของคุณ</p>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1" for="fReporter">ชื่อผู้แจ้ง</label>
+        <input required id="fReporter" name="reporter" type="text" maxlength="80" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-100 focus:outline-none" readonly>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1" for="fContact">ช่องทางติดต่อ</label>
+        <input required id="fContact" name="contact" type="text" maxlength="80" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="เบอร์โทร หรือ Line ID">
+      </div>
+    </div>
+
+    <div class="flex justify-end gap-2 pt-2">
+      <button type="button" data-close-modal class="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100">ยกเลิก</button>
+      <button type="submit" id="reportSubmitBtn" class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700">บันทึกประกาศ</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Admin Edit Modal (edit any field of any post) -->
+<dialog id="adminEditModal" class="rounded-xl p-0 w-full max-w-lg">
+  <form id="adminEditForm" class="p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+    <div class="flex items-center justify-between sticky -top-6 bg-white pt-1 -mt-1">
+      <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2"><i data-lucide="pencil" class="w-4 h-4 text-amber-600"></i> แก้ไขประกาศ (Admin)</h2>
+      <button type="button" data-close-modal class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+    </div>
+    <input type="hidden" id="eItemId">
+
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1" for="eType">ประเภทประกาศ</label>
+        <select id="eType" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+          <option value="found">พบสิ่งของ</option>
+          <option value="lost">ของหาย</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1" for="eStatus">สถานะ</label>
+        <select id="eStatus" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+          <option value="pending">รอตรวจสอบ</option>
+          <option value="approved">เผยแพร่แล้ว</option>
+          <option value="rejected">ปฏิเสธ</option>
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1" for="eTitle">ชื่อสิ่งของ</label>
+      <input required id="eTitle" maxlength="80" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1" for="eCategory">หมวดหมู่</label>
+        <select id="eCategory" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+          <option value="bag">กระเป๋า / กระเป๋าสตางค์</option>
+          <option value="electronics">อุปกรณ์ไอที / มือถือ</option>
+          <option value="document">เอกสารสำคัญ / บัตร</option>
+          <option value="key">กุญแจ / คีย์การ์ด</option>
+          <option value="other">อื่นๆ</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1" for="eDate">วันที่</label>
+        <input required id="eDate" type="date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1" for="eLocation">สถานที่</label>
+      <input required id="eLocation" maxlength="120" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1" for="eDescription">รายละเอียด</label>
+      <textarea required id="eDescription" rows="3" maxlength="500" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"></textarea>
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">รูปภาพ (สูงสุด 10 รูป)</label>
+      <div id="eImageStrip" class="flex flex-wrap gap-2"></div>
+      <input id="eImage" type="file" accept="image/*" multiple class="hidden">
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1" for="eReporter">ชื่อผู้แจ้ง</label>
+        <input required id="eReporter" maxlength="80" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1" for="eContact">ช่องทางติดต่อ</label>
+        <input required id="eContact" maxlength="80" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+      </div>
+    </div>
+
+    <div class="flex justify-end gap-2 pt-2">
+      <button type="button" data-close-modal class="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100">ยกเลิก</button>
+      <button type="submit" class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700">บันทึกการแก้ไข</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Contact / Claim Modal -->
+<dialog id="contactModal" class="rounded-xl p-0 w-full max-w-md">
+  <div class="p-6 space-y-4">
+    <div class="flex items-center justify-between">
+      <h2 id="contactModalTitle" class="text-lg font-bold text-gray-900">ติดต่อผู้แจ้ง</h2>
+      <button type="button" data-close-modal class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+    </div>
+    <div id="contactModalBody" class="text-sm text-gray-600 space-y-2"></div>
+    <form id="contactForm" class="space-y-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1" for="cMessage">ข้อความถึงผู้แจ้ง</label>
+        <textarea required id="cMessage" rows="3" maxlength="500" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="อธิบายจุดสังเกต หรือรายละเอียดที่ยืนยันว่าเป็นของคุณ"></textarea>
+      </div>
+      <div class="flex justify-end gap-2">
+        <button type="button" data-close-modal class="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100">ยกเลิก</button>
+        <button type="submit" class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700">ส่งข้อความ</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<!-- Gallery Modal -->
+<dialog id="galleryModal" class="rounded-xl p-0 w-full max-w-2xl">
+  <div class="p-4 space-y-3">
+    <div class="flex items-center justify-between">
+      <h2 id="galleryTitle" class="text-base font-bold text-gray-900 line-clamp-1"></h2>
+      <button type="button" data-close-modal class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+    </div>
+    <div class="relative bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center" style="aspect-ratio:16/10">
+      <img id="galleryImage" class="max-w-full max-h-full object-contain" alt="รูปภาพสิ่งของ">
+      <button type="button" id="galleryPrev" class="absolute left-2 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white rounded-full p-1.5 shadow"><i data-lucide="chevron-left" class="w-5 h-5"></i></button>
+      <button type="button" id="galleryNext" class="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white rounded-full p-1.5 shadow"><i data-lucide="chevron-right" class="w-5 h-5"></i></button>
+    </div>
+    <p class="text-center text-xs text-gray-500" id="galleryCounter"></p>
+  </div>
+</dialog>
+
+<div id="toastContainer" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 items-center"></div>
+
+<script>
+  // ---------- Local data layer (no external backend — everything lives in this browser) ----------
+  const LS_USERS = 'fms_users';
+  const LS_SESSION = 'fms_session';
+  const LS_ITEMS = 'fms_items';
+  const ADMIN_EMAILS = ['admin@test.com'];
+
+  function genId() { return 'id_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9); }
+
+  function loadUsers() { try { return JSON.parse(localStorage.getItem(LS_USERS) || '[]'); } catch (e) { return []; } }
+  function saveUsers(list) { localStorage.setItem(LS_USERS, JSON.stringify(list)); }
+  function loadItemsFromStorage() { try { return JSON.parse(localStorage.getItem(LS_ITEMS) || '[]'); } catch (e) { return []; } }
+  function saveItemsToStorage(list) { localStorage.setItem(LS_ITEMS, JSON.stringify(list)); }
+
+  function localSignUp(email, password, name) {
+    if (!/^\S+@\S+\.\S+$/.test(email)) { const e = new Error('invalid email'); e.code = 'auth/invalid-email'; throw e; }
+    if (!password || password.length < 6) { const e = new Error('weak password'); e.code = 'auth/weak-password'; throw e; }
+    const users = loadUsers();
+    if (users.some(u => u.email === email)) { const e = new Error('exists'); e.code = 'auth/email-already-in-use'; throw e; }
+    const user = { uid: genId(), email, password, name };
+    users.push(user);
+    saveUsers(users);
+    localStorage.setItem(LS_SESSION, user.uid);
+    return user;
+  }
+
+  function localSignIn(email, password) {
+    const users = loadUsers();
+    const user = users.find(u => u.email === email);
+    if (!user) { const e = new Error('not found'); e.code = 'auth/user-not-found'; throw e; }
+    if (user.password !== password) { const e = new Error('wrong password'); e.code = 'auth/wrong-password'; throw e; }
+    localStorage.setItem(LS_SESSION, user.uid);
+    return user;
+  }
+
+  function localSignOut() { localStorage.removeItem(LS_SESSION); }
+
+  function getSessionUser() {
+    const uid = localStorage.getItem(LS_SESSION);
+    if (!uid) return null;
+    const user = loadUsers().find(u => u.uid === uid);
+    if (!user) return null;
+    return {
+      uid: user.uid,
+      email: user.email,
+      name: user.name,
+      role: ADMIN_EMAILS.includes(user.email) ? 'admin' : 'user'
+    };
+  }
+  const MAX_IMAGES = 10;
+  const MAX_RAW_IMAGE_BYTES = 15 * 1024 * 1024;
+  const COMPRESS_MAX_DIM = 1000;
+  const COMPRESS_QUALITY = 0.72;
+
+  const categoryLabels = {
+    bag: 'กระเป๋า / กระเป๋าสตางค์',
+    electronics: 'อุปกรณ์ไอที / มือถือ',
+    document: 'เอกสารสำคัญ / บัตร',
+    key: 'กุญแจ / คีย์การ์ด',
+    other: 'อื่นๆ'
+  };
+
+  const placeholderImages = {
+    bag: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=500&q=80',
+    electronics: 'https://images.unsplash.com/photo-1592890288564-76628a30a657?w=500&q=80',
+    document: 'https://images.unsplash.com/photo-1568667256549-094345857637?w=500&q=80',
+    key: 'https://images.unsplash.com/photo-1584438784894-089d6a62b8fa?w=500&q=80',
+    other: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=500&q=80'
+  };
+
+  // ---------- State ----------
+  let items = [];
+  let currentUser = null;       // { uid, email, name, role }
+  let currentMainView = 'feed';
+  let feedState = { tab: 'all', query: '', category: '' };
+  let pendingReportType = 'found';
+  let pendingReportImages = [];
+  let pendingEditImages = [];
+  let editingItemId = null;
+  let pendingContactItem = null;
+  let galleryImages = [];
+  let galleryIndex = 0;
+  let authMode = 'login'; // 'login' | 'signup'
+
+  // ---------- Small helpers ----------
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
+  function formatDate(iso) {
+    const d = new Date(iso + 'T00:00:00');
+    if (isNaN(d)) return escapeHtml(iso);
+    const months = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear() + 543}`;
+  }
+
+  function showToast(message, kind) {
+    kind = kind || 'success';
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    const bg = kind === 'success' ? 'bg-emerald-600' : 'bg-red-600';
+    toast.className = `toast ${bg} text-white text-sm font-medium px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-2`;
+    toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 2700);
+  }
+
+  function refreshIcons() { if (window.lucide) lucide.createIcons(); }
+  function coverImage(item) { return (item.images && item.images[0]) || placeholderImages[item.category] || placeholderImages.other; }
+
+  function authErrorMessage(err) {
+    const code = err && err.code;
+    if (code === 'auth/email-already-in-use') return 'อีเมลนี้มีบัญชีอยู่แล้ว กรุณาเข้าสู่ระบบแทน';
+    if (code === 'auth/invalid-email') return 'รูปแบบอีเมลไม่ถูกต้อง';
+    if (code === 'auth/weak-password') return 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร';
+    if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+    if (code === 'auth/user-not-found') return 'ไม่พบบัญชีนี้ กรุณาสมัครสมาชิกก่อน';
+    if (code === 'auth/too-many-requests') return 'มีการพยายามเข้าสู่ระบบผิดหลายครั้ง กรุณาลองใหม่ภายหลัง';
+    return 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง';
+  }
+
+  // ---------- Image compression & upload ----------
+  function compressImage(file, maxDim, quality) {
+    return new Promise((resolve, reject) => {
+      if (file.size > MAX_RAW_IMAGE_BYTES) { reject(new Error('file too large')); return; }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) { height = Math.round(height * (maxDim / width)); width = maxDim; }
+            else { width = Math.round(width * (maxDim / height)); height = maxDim; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => reject(new Error('image decode failed'));
+        img.src = e.target.result;
+      };
+      reader.onerror = () => reject(new Error('file read failed'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleImageFiles(fileList, imagesArray, refreshFn) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const remainingSlots = MAX_IMAGES - imagesArray.length;
+    if (remainingSlots <= 0) { showToast(`เพิ่มรูปได้สูงสุด ${MAX_IMAGES} รูป`, 'error'); return; }
+    if (files.length > remainingSlots) showToast(`เพิ่มรูปได้อีกสูงสุด ${remainingSlots} รูป`, 'error');
+
+    for (const file of files.slice(0, remainingSlots)) {
+      if (!file.type.startsWith('image/')) { showToast('ข้ามไฟล์ที่ไม่ใช่รูปภาพ: ' + file.name, 'error'); continue; }
+      try {
+        const dataUrl = await compressImage(file, COMPRESS_MAX_DIM, COMPRESS_QUALITY);
+        imagesArray.push(dataUrl);
+      } catch (err) {
+        console.error(err);
+        showToast('ไม่สามารถประมวลผลรูปภาพได้: ' + file.name, 'error');
+      }
+    }
+    refreshFn();
+  }
+
+  function renderImageStrip(containerId, fileInputId, imagesArray, onRemove) {
+    const el = document.getElementById(containerId);
+    let html = imagesArray.map((src, idx) => `
+      <div class="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200">
+        <img src="${src}" class="w-full h-full object-cover" alt="รูปที่ ${idx + 1}">
+        <button type="button" data-remove-idx="${idx}" class="absolute top-0 right-0 bg-black/60 hover:bg-black/80 text-white w-5 h-5 flex items-center justify-center text-xs leading-none rounded-bl-lg">✕</button>
+      </div>`).join('');
+    if (imagesArray.length < MAX_IMAGES) {
+      html += `<button type="button" data-add-image class="w-16 h-16 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:border-blue-400 hover:text-blue-500 transition">
+        <i data-lucide="plus" class="w-5 h-5"></i>
+      </button>`;
+    }
+    el.innerHTML = html;
+    refreshIcons();
+    el.querySelectorAll('[data-remove-idx]').forEach(btn => {
+      btn.addEventListener('click', () => onRemove(Number(btn.dataset.removeIdx)));
+    });
+    const addBtn = el.querySelector('[data-add-image]');
+    if (addBtn) addBtn.addEventListener('click', () => document.getElementById(fileInputId).click());
+  }
+
+  function refreshReportImageStrip() {
+    renderImageStrip('fImageStrip', 'fImage', pendingReportImages, (idx) => { pendingReportImages.splice(idx, 1); refreshReportImageStrip(); });
+  }
+  function refreshEditImageStrip() {
+    renderImageStrip('eImageStrip', 'eImage', pendingEditImages, (idx) => { pendingEditImages.splice(idx, 1); refreshEditImageStrip(); });
+  }
+
+  // ---------- Navigation ----------
+  function setNavButtonStyle(btn, active, color) {
+    btn.className = active
+      ? `${color} font-semibold border-b-2 border-current pb-1 inline-flex items-center gap-1`
+      : 'text-gray-600 hover:text-gray-800 font-medium pb-1 inline-flex items-center gap-1';
+  }
+
+  function switchMainView(view) {
+    if (view === 'my' && !currentUser) { showToast('กรุณาเข้าสู่ระบบก่อน', 'error'); openLoginModal('login'); return; }
+    if (view === 'admin' && (!currentUser || currentUser.role !== 'admin')) { showToast('เฉพาะผู้ดูแลระบบเท่านั้นที่เข้าถึงหน้านี้ได้', 'error'); return; }
+    currentMainView = view;
+
+    document.getElementById('feedView').classList.toggle('hidden', view !== 'feed');
+    document.getElementById('myView').classList.toggle('hidden', view !== 'my');
+    document.getElementById('adminView').classList.toggle('hidden', view !== 'admin');
+
+    setNavButtonStyle(document.getElementById('navFeedBtn'), view === 'feed', 'text-blue-600');
+    setNavButtonStyle(document.getElementById('navMyBtn'), view === 'my', 'text-blue-600');
+    setNavButtonStyle(document.getElementById('navAdminBtn'), view === 'admin', 'text-amber-600');
+
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  window.switchMainView = switchMainView;
+
+  function renderMobileNav() {
+    const el = document.getElementById('mainNavMobile');
+    let html = `<button type="button" onclick="switchMainView('feed')" class="px-3 py-1 rounded-md ${currentMainView === 'feed' ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-500'}">หน้าแรก</button>`;
+    if (currentUser) html += `<button type="button" onclick="switchMainView('my')" class="px-3 py-1 rounded-md ${currentMainView === 'my' ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-500'}">ของฉัน</button>`;
+    if (currentUser && currentUser.role === 'admin') html += `<button type="button" onclick="switchMainView('admin')" class="px-3 py-1 rounded-md ${currentMainView === 'admin' ? 'bg-amber-100 text-amber-700 font-semibold' : 'text-gray-500'}">หลังบ้าน</button>`;
+    el.innerHTML = html;
+  }
+
+  // ---------- Auth ----------
+  function setAuthMode(mode) {
+    authMode = mode;
+    const isSignup = mode === 'signup';
+    document.getElementById('authModalTitle').textContent = isSignup ? 'สมัครสมาชิก' : 'เข้าสู่ระบบ';
+    document.getElementById('authSubmitBtn').textContent = isSignup ? 'สมัครสมาชิก' : 'เข้าสู่ระบบ';
+    document.getElementById('authNameField').classList.toggle('hidden', !isSignup);
+    document.getElementById('lName').required = isSignup;
+    document.getElementById('authToggleModeBtn').textContent = isSignup ? 'มีบัญชีแล้ว? เข้าสู่ระบบ' : 'ยังไม่มีบัญชี? สมัครสมาชิก';
+    document.getElementById('authError').classList.add('hidden');
+  }
+
+  function openLoginModal(mode) {
+    setAuthMode(mode || 'login');
+    document.getElementById('loginModal').showModal();
+  }
+
+  document.getElementById('authToggleModeBtn').addEventListener('click', () => setAuthMode(authMode === 'login' ? 'signup' : 'login'));
+
+  function renderAuthUI() {
+    const authContainer = document.getElementById('authContainer');
+    const navMyBtn = document.getElementById('navMyBtn');
+    const navAdminBtn = document.getElementById('navAdminBtn');
+
+    if (currentUser) {
+      const isAdmin = currentUser.role === 'admin';
+      navMyBtn.classList.remove('hidden');
+      navAdminBtn.classList.toggle('hidden', !isAdmin);
+      authContainer.innerHTML = `
+        <span class="text-xs font-semibold px-2 py-0.5 rounded ${isAdmin ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}">${isAdmin ? 'Admin' : 'User'}</span>
+        <span class="text-xs font-medium text-gray-700 hidden sm:inline">${escapeHtml(currentUser.name)}</span>
+        <button type="button" onclick="handleLogout()" class="text-xs text-red-500 hover:text-red-700 font-medium px-1.5 py-1">ออกจากระบบ</button>
+      `;
+    } else {
+      navMyBtn.classList.add('hidden');
+      navAdminBtn.classList.add('hidden');
+      if (currentMainView !== 'feed') switchMainView('feed');
+      authContainer.innerHTML = `
+        <button type="button" onclick="document.getElementById('loginModal').showModal()" class="text-sm text-gray-600 hover:text-blue-600 font-medium px-3 py-1.5 rounded-lg hover:bg-gray-100 flex items-center gap-1">
+          <i data-lucide="log-in" class="w-4 h-4"></i> เข้าสู่ระบบ
+        </button>`;
+    }
+    renderMobileNav();
+    refreshIcons();
+  }
+
+  document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('lName').value.trim();
+    const email = document.getElementById('lEmail').value.trim().toLowerCase();
+    const password = document.getElementById('lPassword').value;
+    const errorBox = document.getElementById('authError');
+    const submitBtn = document.getElementById('authSubmitBtn');
+    errorBox.classList.add('hidden');
+
+    if (authMode === 'signup' && !name) { errorBox.textContent = 'กรุณากรอกชื่อ-นามสกุล'; errorBox.classList.remove('hidden'); return; }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = authMode === 'signup' ? 'กำลังสมัครสมาชิก...' : 'กำลังเข้าสู่ระบบ...';
+
+    try {
+      if (authMode === 'signup') {
+        localSignUp(email, password, name);
+      } else {
+        localSignIn(email, password);
+      }
+      currentUser = getSessionUser();
+      renderAuthUI();
+      render();
+      document.getElementById('loginModal').close();
+      document.getElementById('loginForm').reset();
+      showToast(authMode === 'signup' ? 'สมัครสมาชิกสำเร็จ ยินดีต้อนรับ!' : 'เข้าสู่ระบบสำเร็จ');
+    } catch (err) {
+      console.error(err);
+      errorBox.textContent = authErrorMessage(err);
+      errorBox.classList.remove('hidden');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = authMode === 'signup' ? 'สมัครสมาชิก' : 'เข้าสู่ระบบ';
+    }
+  });
+
+  function handleLogout() {
+    localSignOut();
+    currentUser = null;
+    renderAuthUI();
+    render();
+    showToast('ออกจากระบบเรียบร้อยแล้ว');
+  }
+  window.handleLogout = handleLogout;
+
+  // ---------- Local item store ----------
+  function subscribeToItems() {
+    items = loadItemsFromStorage();
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    renderTabs();
+    render();
+
+    // Keep tabs of the same browser in sync if the user has this page open twice.
+    window.addEventListener('storage', (e) => {
+      if (e.key === LS_ITEMS) {
+        items = loadItemsFromStorage();
+        renderTabs();
+        render();
+      }
+    });
+  }
+
+  function persistItems() {
+    saveItemsToStorage(items);
+  }
+
+  // ---------- Feed rendering (public, approved only) ----------
+  function getFilteredFeedItems() {
+    const q = feedState.query.trim().toLowerCase();
+    return items.filter(item => {
+      if (item.status !== 'approved') return false;
+      if (feedState.tab !== 'all' && item.type !== feedState.tab) return false;
+      if (feedState.category && item.category !== feedState.category) return false;
+      if (q) {
+        const haystack = `${item.title} ${item.description} ${item.location}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    }).sort((a, b) => new Date(b.date) - new Date(a.date));
+  }
+
+  function renderTabs() {
+    document.querySelectorAll('#tabGroup .tab-btn').forEach(btn => {
+      const active = btn.dataset.tab === feedState.tab;
+      btn.className = 'tab-btn px-4 py-1.5 font-medium rounded-md transition text-sm ' +
+        (active ? 'bg-white shadow-sm text-gray-800' : 'text-gray-600 hover:text-gray-800');
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+  }
+
+  function statusBadge(item) {
+    if (item.status === 'pending') return '<span class="absolute top-3 right-3 bg-gray-700/90 text-white text-xs font-bold px-2.5 py-1 rounded-full">รอตรวจสอบ</span>';
+    if (item.status === 'rejected') return '<span class="absolute top-3 right-3 bg-red-700/90 text-white text-xs font-bold px-2.5 py-1 rounded-full">ถูกปฏิเสธ</span>';
+    return '';
+  }
+
+  function cardTemplate(item, opts) {
+    opts = opts || {};
+    const isFound = item.type === 'found';
+    const badge = isFound
+      ? '<span class="absolute top-3 left-3 bg-emerald-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">พบสิ่งของ</span>'
+      : '<span class="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">ทำของหาย</span>';
+    const actionLabel = isFound ? 'ยื่นขอรับคืน' : 'แจ้งเบาะแส';
+    const actionClass = isFound ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-amber-50 text-amber-600 hover:bg-amber-100';
+    const actionButton = opts.showAction === false ? '' : `
+      <button type="button" class="action-btn font-semibold text-xs px-3 py-1.5 rounded-md transition ${actionClass}" data-item-id="${item.id}">
+        ${actionLabel}
+      </button>`;
+    const imgCount = (item.images || []).length;
+    const countBadge = imgCount > 1
+      ? `<span class="absolute bottom-2 right-2 bg-black/60 text-white text-xs font-medium px-2 py-0.5 rounded-full flex items-center gap-1"><i data-lucide="images" class="w-3 h-3"></i>${imgCount}</span>`
+      : '';
+
+    return `
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition">
+      <div class="relative h-48 bg-gray-100 cursor-pointer gallery-trigger" data-item-id="${item.id}">
+        <img src="${escapeHtml(coverImage(item))}" alt="${escapeHtml(item.title)}" class="w-full h-full object-cover" loading="lazy"
+             onerror="this.onerror=null;this.src='${placeholderImages[item.category] || placeholderImages.other}';">
+        ${badge}
+        ${statusBadge(item)}
+        ${countBadge}
+      </div>
+      <div class="p-4 space-y-3">
+        <h3 class="font-bold text-gray-900 text-lg leading-snug line-clamp-1">${escapeHtml(item.title)}</h3>
+        <p class="text-gray-600 text-xs line-clamp-2">${escapeHtml(item.description)}</p>
+        <div class="space-y-1 text-xs text-gray-500">
+          <div class="flex items-center gap-1.5"><i data-lucide="map-pin" class="w-4 h-4 text-gray-400"></i><span>${escapeHtml(item.location)}</span></div>
+          <div class="flex items-center gap-1.5"><i data-lucide="calendar" class="w-4 h-4 text-gray-400"></i><span>${formatDate(item.date)}</span></div>
+          <div class="flex items-center gap-1.5"><i data-lucide="tag" class="w-4 h-4 text-gray-400"></i><span>${escapeHtml(categoryLabels[item.category] || item.category)}</span></div>
+        </div>
+        <div class="pt-2 border-t border-gray-100 flex justify-between items-center gap-2">
+          <span class="text-xs text-gray-400 truncate">โดย: ${escapeHtml(item.reporter)}</span>
+          ${actionButton}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function wireCardEvents(grid) {
+    grid.querySelectorAll('.action-btn').forEach(btn => {
+      btn.addEventListener('click', () => openContactModal(btn.dataset.itemId));
+    });
+    grid.querySelectorAll('.gallery-trigger').forEach(el => {
+      el.addEventListener('click', () => openGalleryModal(el.dataset.itemId));
+    });
+  }
+
+  function renderFeed() {
+    const grid = document.getElementById('cardsGrid');
+    const empty = document.getElementById('emptyState');
+    const filtered = getFilteredFeedItems();
+    document.getElementById('resultCount').textContent = `พบทั้งหมด ${filtered.length} รายการ`;
+
+    if (filtered.length === 0) { grid.innerHTML = ''; empty.classList.remove('hidden'); }
+    else { empty.classList.add('hidden'); grid.innerHTML = filtered.map(i => cardTemplate(i)).join(''); }
+    wireCardEvents(grid);
+  }
+
+  function renderMyItems() {
+    const grid = document.getElementById('myCardsGrid');
+    const empty = document.getElementById('emptyMyState');
+    if (!currentUser) { grid.innerHTML = ''; empty.classList.add('hidden'); return; }
+
+    const mine = items.filter(i => i.ownerUid === currentUser.uid).sort((a, b) => new Date(b.date) - new Date(a.date));
+    document.getElementById('myResultCount').textContent = `ทั้งหมด ${mine.length} รายการ`;
+
+    if (mine.length === 0) { grid.innerHTML = ''; empty.classList.remove('hidden'); }
+    else { empty.classList.add('hidden'); grid.innerHTML = mine.map(i => cardTemplate(i, { showAction: false })).join(''); }
+    wireCardEvents(grid);
+  }
+
+  // ---------- Gallery modal ----------
+  function openGalleryModal(itemId) {
+    const item = items.find(i => i.id === itemId);
+    if (!item) return;
+    galleryImages = (item.images && item.images.length) ? item.images : [coverImage(item)];
+    galleryIndex = 0;
+    document.getElementById('galleryTitle').textContent = item.title;
+    renderGallery();
+    document.getElementById('galleryModal').showModal();
+  }
+
+  function renderGallery() {
+    document.getElementById('galleryImage').src = galleryImages[galleryIndex];
+    document.getElementById('galleryCounter').textContent = `${galleryIndex + 1} / ${galleryImages.length}`;
+    const multi = galleryImages.length > 1;
+    document.getElementById('galleryPrev').classList.toggle('hidden', !multi);
+    document.getElementById('galleryNext').classList.toggle('hidden', !multi);
+  }
+
+  document.getElementById('galleryPrev').addEventListener('click', () => {
+    galleryIndex = (galleryIndex - 1 + galleryImages.length) % galleryImages.length;
+    renderGallery();
+  });
+  document.getElementById('galleryNext').addEventListener('click', () => {
+    galleryIndex = (galleryIndex + 1) % galleryImages.length;
+    renderGallery();
+  });
+
+  // ---------- Admin rendering ----------
+  function statusLabel(status) {
+    if (status === 'approved') return '<span class="text-xs bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded border border-emerald-200">เผยแพร่แล้ว</span>';
+    if (status === 'rejected') return '<span class="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded border border-red-200">ถูกปฏิเสธ</span>';
+    return '<span class="text-xs bg-gray-50 text-gray-600 px-2 py-0.5 rounded border border-gray-200">รอตรวจสอบ</span>';
+  }
+
+  function renderAdmin() {
+    if (!currentUser || currentUser.role !== 'admin') return;
+
+    const pendingItems = items.filter(i => i.status === 'pending');
+    const badge = document.getElementById('pendingBadge');
+    if (pendingItems.length > 0) { badge.textContent = pendingItems.length; badge.classList.remove('hidden'); }
+    else { badge.classList.add('hidden'); }
+
+    const pendingTbody = document.getElementById('pendingTableBody');
+    pendingTbody.innerHTML = pendingItems.length === 0
+      ? `<tr><td colspan="5" class="text-center py-6 text-gray-400">ไม่มีรายการที่รอการอนุมัติ</td></tr>`
+      : pendingItems.map(item => `
+        <tr class="hover:bg-gray-50/50">
+          <td class="p-4"><span class="px-2 py-1 rounded text-xs font-semibold ${item.type === 'found' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}">${item.type === 'found' ? 'พบของ' : 'ของหาย'}</span></td>
+          <td class="p-4 font-medium text-gray-900">${escapeHtml(item.title)}</td>
+          <td class="p-4 text-xs text-gray-500">${escapeHtml(item.location)} (${escapeHtml(item.date)})</td>
+          <td class="p-4 text-xs">${escapeHtml(item.reporter)}<br><span class="text-gray-400">${escapeHtml(item.contact)}</span></td>
+          <td class="p-4 text-center space-x-1 whitespace-nowrap">
+            <button type="button" onclick="approveItem('${item.id}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded text-xs font-medium transition">อนุมัติ</button>
+            <button type="button" onclick="rejectItem('${item.id}')" class="bg-gray-500 hover:bg-gray-600 text-white px-2.5 py-1 rounded text-xs font-medium transition">ปฏิเสธ</button>
+            <button type="button" onclick="openAdminEditModal('${item.id}')" class="bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 rounded text-xs font-medium transition">แก้ไข</button>
+            <button type="button" onclick="deleteItem('${item.id}')" class="bg-red-500 hover:bg-red-600 text-white px-2.5 py-1 rounded text-xs font-medium transition">ลบ</button>
+          </td>
+        </tr>`).join('');
+
+    const allSorted = [...items].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const allTbody = document.getElementById('allTableBody');
+    allTbody.innerHTML = allSorted.length === 0
+      ? `<tr><td colspan="5" class="text-center py-6 text-gray-400">ไม่มีประกาศในระบบ</td></tr>`
+      : allSorted.map(item => `
+        <tr class="hover:bg-gray-50/50">
+          <td class="p-4"><span class="px-2 py-1 rounded text-xs font-semibold ${item.type === 'found' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}">${item.type === 'found' ? 'พบของ' : 'ของหาย'}</span></td>
+          <td class="p-4 font-medium text-gray-900">${escapeHtml(item.title)}</td>
+          <td class="p-4 text-xs">${escapeHtml(item.reporter)} (${escapeHtml(item.contact)})</td>
+          <td class="p-4">${statusLabel(item.status)}</td>
+          <td class="p-4 text-center space-x-1 whitespace-nowrap">
+            <button type="button" onclick="openAdminEditModal('${item.id}')" class="text-amber-600 hover:text-amber-800 font-medium text-xs border border-amber-200 px-2 py-1 rounded hover:bg-amber-50">แก้ไข</button>
+            <button type="button" onclick="deleteItem('${item.id}')" class="text-red-500 hover:text-red-700 font-medium text-xs border border-red-200 px-2 py-1 rounded hover:bg-red-50">ลบ</button>
+          </td>
+        </tr>`).join('');
+  }
+
+  function approveItem(id) {
+    if (!currentUser || currentUser.role !== 'admin') return;
+    const item = items.find(i => i.id === id);
+    if (!item) return;
+    item.status = 'approved';
+    persistItems();
+    renderTabs();
+    render();
+    showToast('อนุมัติรายการเรียบร้อยแล้ว');
+  }
+  window.approveItem = approveItem;
+
+  function rejectItem(id) {
+    if (!currentUser || currentUser.role !== 'admin') return;
+    const item = items.find(i => i.id === id);
+    if (!item) return;
+    item.status = 'rejected';
+    persistItems();
+    renderTabs();
+    render();
+    showToast('ปฏิเสธรายการแล้ว', 'error');
+  }
+  window.rejectItem = rejectItem;
+
+  function deleteItem(id) {
+    if (!currentUser || currentUser.role !== 'admin') return;
+    const item = items.find(i => i.id === id);
+    if (!item) return;
+    if (!confirm(`คุณต้องการลบประกาศ "${item.title}" ใช่หรือไม่? การลบไม่สามารถย้อนกลับได้`)) return;
+    items = items.filter(i => i.id !== id);
+    persistItems();
+    renderTabs();
+    render();
+    showToast('ลบประกาศเรียบร้อยแล้ว', 'error');
+  }
+  window.deleteItem = deleteItem;
+
+  // ---------- Admin edit (full control over any post) ----------
+  function openAdminEditModal(id) {
+    if (!currentUser || currentUser.role !== 'admin') return;
+    const item = items.find(i => i.id === id);
+    if (!item) return;
+    editingItemId = id;
+
+    document.getElementById('eItemId').value = item.id;
+    document.getElementById('eType').value = item.type;
+    document.getElementById('eStatus').value = item.status;
+    document.getElementById('eTitle').value = item.title;
+    document.getElementById('eCategory').value = item.category;
+    document.getElementById('eDate').value = item.date;
+    document.getElementById('eLocation').value = item.location;
+    document.getElementById('eDescription').value = item.description;
+    document.getElementById('eReporter').value = item.reporter;
+    document.getElementById('eContact').value = item.contact;
+
+    pendingEditImages = [...(item.images || [])];
+    refreshEditImageStrip();
+    document.getElementById('adminEditModal').showModal();
+  }
+  window.openAdminEditModal = openAdminEditModal;
+
+  document.getElementById('eImage').addEventListener('change', async (e) => {
+    await handleImageFiles(e.target.files, pendingEditImages, refreshEditImageStrip);
+    e.target.value = '';
+  });
+
+  document.getElementById('adminEditForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!currentUser || currentUser.role !== 'admin') return;
+    const id = document.getElementById('eItemId').value;
+    const item = items.find(i => i.id === id);
+    if (!item) { showToast('ไม่พบประกาศนี้แล้ว', 'error'); document.getElementById('adminEditModal').close(); return; }
+
+    const title = document.getElementById('eTitle').value.trim();
+    const location = document.getElementById('eLocation').value.trim();
+    const description = document.getElementById('eDescription').value.trim();
+    const reporter = document.getElementById('eReporter').value.trim();
+    const contact = document.getElementById('eContact').value.trim();
+    if (!title || !location || !description || !reporter || !contact) { showToast('กรุณากรอกข้อมูลให้ครบถ้วน', 'error'); return; }
+
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'กำลังบันทึก...';
+
+    try {
+      Object.assign(item, {
+        type: document.getElementById('eType').value,
+        status: document.getElementById('eStatus').value,
+        category: document.getElementById('eCategory').value,
+        date: document.getElementById('eDate').value,
+        title, location, description, reporter, contact,
+        images: [...pendingEditImages]
+      });
+      persistItems();
+      renderTabs();
+      render();
+
+      document.getElementById('adminEditModal').close();
+      editingItemId = null;
+      showToast('บันทึกการแก้ไขเรียบร้อยแล้ว');
+    } catch (err) {
+      console.error(err);
+      showToast('บันทึกการแก้ไขไม่สำเร็จ', 'error');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'บันทึกการแก้ไข';
+    }
+  });
+
+  // ---------- Master render ----------
+  function render() {
+    renderAuthUI();
+    if (currentMainView === 'feed') renderFeed();
+    if (currentMainView === 'my') renderMyItems();
+    if (currentMainView === 'admin') renderAdmin();
+    refreshIcons();
+  }
+
+  // ---------- Feed controls ----------
+  document.getElementById('tabGroup').addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    feedState.tab = btn.dataset.tab;
+    renderTabs();
+    renderFeed();
+  });
+
+  document.getElementById('searchForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    feedState.query = document.getElementById('searchInput').value;
+    feedState.category = document.getElementById('categorySelect').value;
+    renderFeed();
+  });
+  document.getElementById('searchInput').addEventListener('input', (e) => { feedState.query = e.target.value; renderFeed(); });
+  document.getElementById('categorySelect').addEventListener('change', (e) => { feedState.category = e.target.value; renderFeed(); });
+
+  // ---------- Report modal (user) ----------
+  const reportModal = document.getElementById('reportModal');
+  const reportForm = document.getElementById('reportForm');
+  const fImage = document.getElementById('fImage');
+
+  function openReportModal(type) {
+    if (!currentUser) { showToast('กรุณาเข้าสู่ระบบก่อนส่งประกาศ', 'error'); openLoginModal('login'); return; }
+    pendingReportType = type;
+    document.getElementById('reportModalTitle').textContent = type === 'found' ? 'แจ้งพบสิ่งของ' : 'แจ้งของหาย';
+    document.getElementById('reportSubmitBtn').textContent = type === 'found' ? 'บันทึกประกาศพบของ' : 'บันทึกประกาศของหาย';
+    document.getElementById('fTitle').placeholder = type === 'found' ? 'เช่น พบกระเป๋าสตางค์สีน้ำตาล' : 'เช่น ทำกระเป๋าสตางค์สีน้ำตาลหาย';
+    reportForm.reset();
+    document.getElementById('fDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('fDate').max = new Date().toISOString().slice(0, 10);
+    document.getElementById('fReporter').value = currentUser.name;
+    pendingReportImages = [];
+    refreshReportImageStrip();
+    reportModal.showModal();
+  }
+
+  document.getElementById('btnReportFound').addEventListener('click', () => openReportModal('found'));
+  document.getElementById('btnReportLost').addEventListener('click', () => openReportModal('lost'));
+
+  fImage.addEventListener('change', async (e) => {
+    await handleImageFiles(e.target.files, pendingReportImages, refreshReportImageStrip);
+    e.target.value = '';
+  });
+
+  reportForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!currentUser) { showToast('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่', 'error'); reportModal.close(); openLoginModal('login'); return; }
+
+    const data = Object.fromEntries(new FormData(reportForm).entries());
+    const title = data.title.trim();
+    const location = data.location.trim();
+    const description = data.description.trim();
+    const contact = data.contact.trim();
+    if (!title || !location || !description || !contact) { showToast('กรุณากรอกข้อมูลให้ครบถ้วน', 'error'); return; }
+
+    const submitBtn = document.getElementById('reportSubmitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'กำลังบันทึก...';
+
+    const isAdminUser = currentUser.role === 'admin';
+    try {
+      const newItem = {
+        id: genId(),
+        type: pendingReportType,
+        status: isAdminUser ? 'approved' : 'pending',
+        category: data.category,
+        title, description, location,
+        date: data.date,
+        reporter: currentUser.name,
+        contact,
+        ownerUid: currentUser.uid,
+        ownerEmail: currentUser.email,
+        images: [...pendingReportImages],
+        createdAt: new Date().toISOString()
+      };
+      items.push(newItem);
+      persistItems();
+
+      reportModal.close();
+      pendingReportImages = [];
+      feedState = { tab: 'all', query: '', category: '' };
+      document.getElementById('searchInput').value = '';
+      document.getElementById('categorySelect').value = '';
+      renderTabs();
+      render();
+
+      showToast(isAdminUser
+        ? 'บันทึกและเผยแพร่ประกาศเรียบร้อยแล้ว'
+        : 'ส่งข้อมูลเรียบร้อยแล้ว ประกาศของคุณรอการตรวจสอบจากผู้ดูแลระบบ');
+    } catch (err) {
+      console.error(err);
+      showToast('บันทึกประกาศไม่สำเร็จ กรุณาลองใหม่', 'error');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = pendingReportType === 'found' ? 'บันทึกประกาศพบของ' : 'บันทึกประกาศของหาย';
+    }
+  });
+
+  // ---------- Contact modal ----------
+  const contactModal = document.getElementById('contactModal');
+  const contactForm = document.getElementById('contactForm');
+
+  function openContactModal(itemId) {
+    if (!currentUser) { showToast('กรุณาเข้าสู่ระบบก่อนติดต่อผู้แจ้ง', 'error'); openLoginModal('login'); return; }
+    const item = items.find(i => i.id === itemId);
+    if (!item) return;
+    if (item.ownerUid === currentUser.uid) { showToast('นี่คือประกาศของคุณเอง', 'error'); return; }
+    pendingContactItem = item;
+
+    const isFound = item.type === 'found';
+    document.getElementById('contactModalTitle').textContent = isFound ? 'ยื่นขอรับคืนสิ่งของ' : 'แจ้งเบาะแสของหาย';
+    document.getElementById('contactModalBody').innerHTML = `
+      <p><span class="font-semibold text-gray-800">${escapeHtml(item.title)}</span></p>
+      <p>ผู้แจ้ง: ${escapeHtml(item.reporter)} • ช่องทางติดต่อ: ${escapeHtml(item.contact)}</p>
+      <p class="text-xs text-gray-400">กรุณาระบุรายละเอียดที่ยืนยันความเป็นเจ้าของ หรือเบาะแสที่พบ เพื่อความปลอดภัยของทั้งสองฝ่าย</p>
+    `;
+    contactForm.reset();
+    contactModal.showModal();
+  }
+
+  contactForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    contactModal.close();
+    showToast('ส่งข้อความถึงผู้แจ้งเรียบร้อยแล้ว (ยังไม่มีระบบข้อความจริงฝั่งเซิร์ฟเวอร์)');
+    pendingContactItem = null;
+  });
+
+  // ---------- Modal close handlers ----------
+  document.querySelectorAll('[data-close-modal]').forEach(btn => {
+    btn.addEventListener('click', () => btn.closest('dialog').close());
+  });
+  document.querySelectorAll('dialog').forEach(dialog => {
+    dialog.addEventListener('click', (e) => {
+      const rect = dialog.getBoundingClientRect();
+      const inDialog = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+      if (!inDialog) dialog.close();
+    });
+  });
+
+  // ---------- Init ----------
+  currentUser = getSessionUser();
+  setAuthMode('login');
+  renderAuthUI();
+  renderTabs();
+  refreshIcons();
+  subscribeToItems();
+</script>
+</body>
+</html>
